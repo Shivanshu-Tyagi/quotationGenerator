@@ -12,12 +12,12 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'https://quotation-generator-git-v1-shivanshu-tyagis-projects.vercel.app',
-  'https://your-production-domain.com' // Add your actual production domain
+  'https://your-production-domain.com' 
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
+    
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {

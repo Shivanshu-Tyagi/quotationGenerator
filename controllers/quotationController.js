@@ -1,20 +1,37 @@
 const Quotation = require('../models/quotation');
 const Customer  = require('../models/customer');
 const Item      = require('../models/items');
-const puppeteer = require('puppeteer');
+// const puppeteer = require('puppeteer');
+const chromium = require('@sparticuz/chromium');
+const puppeteer = require('puppeteer-core');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/uploadCloudnary');
 
 // ── Shared Puppeteer browser instance ────────────────────────────────────
 let browserInstance = null;
 
 const getBrowser = async () => {
-  if (!browserInstance || !browserInstance.isConnected()) {
-    browserInstance = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
+  if (browserInstance && browserInstance.isConnected()) {
+    return browserInstance;
   }
-  return browserInstance;
+
+  // Determine if we are running in a Vercel environment
+  const isProduction = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+  try {
+    browserInstance = await puppeteer.launch({
+      args: isProduction ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: isProduction ? chromium.defaultViewport : null,
+      executablePath: isProduction 
+        ? await chromium.executablePath() // Uses the version hosted by @sparticuz/chromium
+        : process.env.LOCAL_CHROMIUM_PATH, // Fallback for local dev (see step 4)
+      headless: true,
+      ignoreHTTPSErrors: true,
+    });
+    return browserInstance;
+  } catch (error) {
+    console.error('Error launching browser:', error);
+    throw new Error('Could not launch browser for PDF generation.');
+  }
 };
 
 // ── Upload a base64 data-URI to Cloudinary ────────────────────────────────
@@ -250,38 +267,45 @@ exports.deleteQuotation = async (req, res) => {
 // GENERATE PDF
 exports.generatePDF = async (req, res) => {
   const { html, filename = 'quotation' } = req.body;
-  if (!html) return res.status(400).json({ message: 'HTML content is required' });
+  if (!html) {
+    return res.status(400).json({ message: 'HTML content is required' });
+  }
 
-  let page;
+  let page = null;
   try {
     console.time('PDF Generation');
     const browser = await getBrowser();
     page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 15000 });
 
-    const pdfBuffer = await page.pdf({
-      format: 'A4', printBackground: true,
-      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+     await page.setContent(html, { 
+      waitUntil: 'networkidle0',
+      timeout: 30000 
     });
 
-    await page.close(); page = null;
-
-    const header = Buffer.from(pdfBuffer).slice(0, 5).toString();
-    if (header !== '%PDF-') throw new Error('Generated file does not have a valid PDF header');
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+    });
 
     console.timeEnd('PDF Generation');
     console.log(`PDF generated — ${pdfBuffer.length} bytes`);
 
-    res.setHeader('Content-Type', 'application/pdf');
+     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.send(Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer));
+    res.send(pdfBuffer);
+
   } catch (error) {
-    if (page) await page.close().catch(() => {});
     console.error('Error generating PDF:', error);
-    res.status(500).json({ message: 'Error generating PDF', error: error.message });
+    res.status(500).json({ 
+      message: 'Error generating PDF', 
+      error: error.message 
+    });
+  } finally {
+    // Always close the page to free up memory, but keep the browser running
+    if (page) {
+      await page.close().catch(console.error);
+    }
   }
 };
