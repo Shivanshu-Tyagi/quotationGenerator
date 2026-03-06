@@ -11,7 +11,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
-  'http://localhost:5000',
+  'https://quotation-generator-git-v1-shivanshu-tyagis-projects.vercel.app',
   'https://your-production-domain.com' 
 ];
 
