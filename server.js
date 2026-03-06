@@ -2,13 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
-const fs      = require('fs');
 const cloudinary = require('cloudinary').v2;
 
 const connectDB = require('./config/db');
 
 const app = express();
-require('dotenv').config();
 
 // TEMPORARY DEBUG — remove after fixing
 console.log('CLOUDINARY CHECK:', {
@@ -18,6 +16,7 @@ console.log('CLOUDINARY CHECK:', {
     ? `${process.env.CLOUDINARY_API_SECRET.slice(0,4)}...${process.env.CLOUDINARY_API_SECRET.slice(-4)} (len:${process.env.CLOUDINARY_API_SECRET.length})`
     : 'MISSING',
 });
+
 // ── Cloudinary config ─────────────────────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -32,11 +31,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ── Database ──────────────────────────────────────────────────────────────
 connectDB();
-
-// ── Local images directory (kept for any local static needs) ──────────────
-const imgDir = path.join(__dirname, 'images');
-if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir);
-app.use('/images', express.static(imgDir));
 
 // ── Routes ────────────────────────────────────────────────────────────────
 const customerRoutes  = require('./routes/customerRoutes');
