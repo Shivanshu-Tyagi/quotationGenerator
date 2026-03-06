@@ -3,25 +3,23 @@ const mongoose = require('mongoose');
 const itemSchema = new mongoose.Schema(
   {
     name: {
-      type: String,
+      type:     String,
       required: [true, 'Please provide item name'],
-      trim: true
+      trim:     true,
     },
     price: {
-      type: Number,
+      type:     Number,
       required: [true, 'Please provide item price'],
-      min: [0, 'Price cannot be negative']
+      min:      [0, 'Price cannot be negative'],
     },
-    description: {
-      type: String,
-      trim: true
-    },
-    imagePath: {
-      type: String,
-      default: null
-    }
+    description: { type: String, trim: true },
+
+    // Cloudinary URL (replaces local /images/ path)
+    imagePath:     { type: String, default: null },
+    // Cloudinary public_id — needed to delete the image on update/delete
+    imagePublicId: { type: String, default: null },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Item', itemSchema);
+module.exports = mongoose.models.Item || mongoose.model('Item', itemSchema);

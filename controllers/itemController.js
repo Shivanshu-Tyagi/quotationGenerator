@@ -1,8 +1,9 @@
 const Item = require('../models/items');
-const fs = require('fs');
-const path = require('path');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/uploadCloudnary');
 
-// Get all items
+// ─────────────────────────────────────────────────────────────────────────
+// GET ALL ITEMS
+// ─────────────────────────────────────────────────────────────────────────
 exports.getAllItems = async (req, res) => {
   try {
     const items = await Item.find().sort({ createdAt: -1 });
@@ -12,111 +13,109 @@ exports.getAllItems = async (req, res) => {
   }
 };
 
-// Create new item with image upload
+// ─────────────────────────────────────────────────────────────────────────
+// CREATE ITEM
+// ─────────────────────────────────────────────────────────────────────────
 exports.createItem = async (req, res) => {
   const { name, price, description } = req.body;
 
-  // Validation
   if (!name || !price) {
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     return res.status(400).json({ message: 'Name and price are required' });
   }
 
   try {
-    const imagePath = req.file ? `/images/${req.file.filename}` : null;
+    let imagePath      = null;
+    let imagePublicId  = null;
+
+    if (req.file) {
+      const result  = await uploadToCloudinary(req.file.buffer, 'items');
+      imagePath     = result.secure_url;
+      imagePublicId = result.public_id;
+    }
 
     const item = new Item({
       name,
-      price: parseFloat(price),
+      price:        parseFloat(price),
       description,
-      imagePath
+      imagePath,
+      imagePublicId,
     });
 
     const savedItem = await item.save();
     res.status(201).json(savedItem);
   } catch (error) {
-    // Delete uploaded file if save fails
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ message: 'Error creating item', error: error.message });
   }
 };
 
-// Get single item
+// ─────────────────────────────────────────────────────────────────────────
+// GET SINGLE ITEM
+// ─────────────────────────────────────────────────────────────────────────
 exports.getItem = async (req, res) => {
   try {
     const item = await Item.findById(req.params.id);
-
-    if (!item) {
-      return res.status(404).json({ message: 'Item not found' });
-    }
-
+    if (!item) return res.status(404).json({ message: 'Item not found' });
     res.status(200).json(item);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching item', error: error.message });
   }
 };
 
-// Update item
+// ─────────────────────────────────────────────────────────────────────────
+// UPDATE ITEM
+// ─────────────────────────────────────────────────────────────────────────
 exports.updateItem = async (req, res) => {
   try {
     const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: 'Item not found' });
 
-    if (!item) {
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
+    let imagePath     = item.imagePath;
+    let imagePublicId = item.imagePublicId;
+
+    if (req.file) {
+      // Delete old image from Cloudinary before uploading new one
+      if (item.imagePublicId) {
+        await deleteFromCloudinary(item.imagePublicId).catch(err =>
+          console.warn('Could not delete old Cloudinary image:', err.message)
+        );
       }
-      return res.status(404).json({ message: 'Item not found' });
-    }
 
-    // Delete old image if new one is uploaded
-    if (req.file && item.imagePath) {
-      const oldImagePath = path.join(__dirname, '../', item.imagePath);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
-      }
+      const result  = await uploadToCloudinary(req.file.buffer, 'items');
+      imagePath     = result.secure_url;
+      imagePublicId = result.public_id;
     }
-
-    const updateData = {
-      name: req.body.name || item.name,
-      price: req.body.price ? parseFloat(req.body.price) : item.price,
-      description: req.body.description || item.description,
-      imagePath: req.file ? `/images/${req.file.filename}` : item.imagePath
-    };
 
     const updatedItem = await Item.findByIdAndUpdate(
       req.params.id,
-      updateData,
+      {
+        name:         req.body.name        || item.name,
+        price:        req.body.price       ? parseFloat(req.body.price) : item.price,
+        description:  req.body.description !== undefined ? req.body.description : item.description,
+        imagePath,
+        imagePublicId,
+      },
       { new: true, runValidators: true }
     );
 
     res.status(200).json(updatedItem);
   } catch (error) {
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ message: 'Error updating item', error: error.message });
   }
 };
 
-// Delete item
+// ─────────────────────────────────────────────────────────────────────────
+// DELETE ITEM
+// ─────────────────────────────────────────────────────────────────────────
 exports.deleteItem = async (req, res) => {
   try {
     const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: 'Item not found' });
 
-    if (!item) {
-      return res.status(404).json({ message: 'Item not found' });
-    }
-
-    // Delete image if exists
-    if (item.imagePath) {
-      const imagePath = path.join(__dirname, '../', item.imagePath);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
+    // Delete image from Cloudinary
+    if (item.imagePublicId) {
+      await deleteFromCloudinary(item.imagePublicId).catch(err =>
+        console.warn('Could not delete Cloudinary image:', err.message)
+      );
     }
 
     await Item.findByIdAndDelete(req.params.id);
