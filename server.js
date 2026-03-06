@@ -7,17 +7,7 @@ const connectDB = require('./config/db');
 
 const app = express();
 
-app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://quotation-generator-git-v1-shivanshu-tyagis-projects.vercel.app"
-  ],
-  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"],
-  credentials: true
-}));
-
-app.options("*", cors());
+app.use(cors({ origin: "*" }));
 
 app.use(express.json());
 
