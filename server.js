@@ -7,10 +7,37 @@ const connectDB = require('./config/db');
 
 const app = express();
 
-app.use(cors({ origin: "*" }));
+// ── CORS Configuration ───────────────────────────────────────────────────
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://quotation-generator-git-v1-shivanshu-tyagis-projects.vercel.app',
+  'https://your-production-domain.com' // Add your actual production domain
+];
 
-app.use(express.json());
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc.)
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
 
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+
+// ── Body parsing middleware ──────────────────────────────────────────────
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // TEMPORARY DEBUG — remove after fixing
 console.log('CLOUDINARY CHECK:', {
@@ -27,10 +54,6 @@ cloudinary.config({
   api_key:    process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
-// ── Middleware ────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ── Database ──────────────────────────────────────────────────────────────
 connectDB();
@@ -79,6 +102,15 @@ app.post('/api/zoho/create-estimate', async (req, res) => {
 // ── Global error handler ──────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error(err.stack);
+  
+  // Handle CORS errors specifically
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ 
+      message: 'CORS error: Origin not allowed',
+      error: err.message 
+    });
+  }
+  
   res.status(500).json({ message: 'Something went wrong!', error: err.message });
 });
 
@@ -89,6 +121,7 @@ const PORT = process.env.PORT || 5000;
 if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`CORS enabled for origins:`, allowedOrigins);
   });
 }
 
