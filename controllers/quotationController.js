@@ -1,19 +1,17 @@
 const Quotation = require('../models/quotation');
 const Customer  = require('../models/customer');
 const Item      = require('../models/items');
-const chromium = require("chrome-aws-lambda");
-const puppeteer = require("puppeteer-core");
+const puppeteer = require('puppeteer');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/uploadCloudnary');
 
 // ── Shared Puppeteer browser instance ────────────────────────────────────
 let browserInstance = null;
 
 const getBrowser = async () => {
-  if (!browserInstance) {
+  if (!browserInstance || !browserInstance.isConnected()) {
     browserInstance = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath,
-      headless: chromium.headless,
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
   }
   return browserInstance;
