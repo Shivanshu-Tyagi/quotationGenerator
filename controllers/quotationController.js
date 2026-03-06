@@ -272,40 +272,75 @@ exports.generatePDF = async (req, res) => {
   }
 
   let page = null;
+  let browser = null;
+  
   try {
     console.time('PDF Generation');
-    const browser = await getBrowser();
+    browser = await getBrowser();
     page = await browser.newPage();
 
-     await page.setContent(html, { 
-      waitUntil: 'networkidle0',
+    // Set content and wait for everything to load
+    await page.setContent(html, { 
+      waitUntil: ['load', 'networkidle0'], // Wait for both load and network idle
       timeout: 30000 
     });
 
+    // Generate PDF with specific options for better compatibility
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+      margin: { 
+        top: '20mm', 
+        right: '20mm', 
+        bottom: '20mm', 
+        left: '20mm' 
+      },
+      preferCSSPageSize: true, // Use CSS page size if specified
+      displayHeaderFooter: false, // Set to true if you want headers/footers
     });
 
     console.timeEnd('PDF Generation');
     console.log(`PDF generated — ${pdfBuffer.length} bytes`);
 
-     res.setHeader('Content-Type', 'application/pdf');
+    // Validate PDF buffer
+    if (!pdfBuffer || pdfBuffer.length < 100) {
+      throw new Error('Generated PDF is too small or empty');
+    }
+
+    // Verify PDF header
+    const pdfHeader = pdfBuffer.slice(0, 5).toString();
+    if (pdfHeader !== '%PDF-') {
+      throw new Error('Generated file is not a valid PDF');
+    }
+
+    // Clear any existing headers
+    res.removeHeader('Content-Type');
+    res.removeHeader('Content-Disposition');
+    res.removeHeader('Content-Length');
+
+    // Set fresh headers
+    res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
-    res.send(pdfBuffer);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    // Send the buffer
+    return res.send(pdfBuffer);
 
   } catch (error) {
     console.error('Error generating PDF:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       message: 'Error generating PDF', 
       error: error.message 
     });
   } finally {
-    // Always close the page to free up memory, but keep the browser running
+    // Clean up resources
     if (page) {
       await page.close().catch(console.error);
     }
+    // Don't close browser if you're reusing it
+    // Only close if you're not using browser instance caching
   }
 };
