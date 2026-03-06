@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
-const path    = require('path');
 const cloudinary = require('cloudinary').v2;
 
 const connectDB = require('./config/db');
@@ -79,10 +78,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong!', error: err.message });
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────
+// ── Start (for local development only) ────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});
 
-module.exports = { app, cloudinary };
+// Only start the server if we're not in a serverless environment
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export the app for serverless environments
+module.exports = app;
