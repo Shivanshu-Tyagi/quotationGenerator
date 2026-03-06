@@ -12,9 +12,14 @@ app.use(cors({
     "http://localhost:3000",
     "https://quotation-generator-git-v1-shivanshu-tyagis-projects.vercel.app"
   ],
-  methods: ["GET","POST","PUT","DELETE"],
+  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
   credentials: true
 }));
+
+app.options("*", cors());
+
+app.use(express.json());
 
 
 // TEMPORARY DEBUG — remove after fixing
