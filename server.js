@@ -7,6 +7,16 @@ const connectDB = require('./config/db');
 
 const app = express();
 
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "https://quotation-generator-git-v1-shivanshu-tyagis-projects.vercel.app"
+  ],
+  methods: ["GET","POST","PUT","DELETE"],
+  credentials: true
+}));
+
+
 // TEMPORARY DEBUG — remove after fixing
 console.log('CLOUDINARY CHECK:', {
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
