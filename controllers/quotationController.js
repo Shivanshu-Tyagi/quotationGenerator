@@ -1,37 +1,20 @@
 const Quotation = require('../models/quotation');
 const Customer  = require('../models/customer');
 const Item      = require('../models/items');
-// const puppeteer = require('puppeteer');
-const chromium = require('@sparticuz/chromium');
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/uploadCloudnary');
 
 // ── Shared Puppeteer browser instance ────────────────────────────────────
 let browserInstance = null;
 
 const getBrowser = async () => {
-  if (browserInstance && browserInstance.isConnected()) {
-    return browserInstance;
-  }
-
-  // Determine if we are running in a Vercel environment
-  const isProduction = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
-
-  try {
+  if (!browserInstance || !browserInstance.isConnected()) {
     browserInstance = await puppeteer.launch({
-      args: isProduction ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
-      defaultViewport: isProduction ? chromium.defaultViewport : null,
-      executablePath: isProduction 
-        ? await chromium.executablePath() // Uses the version hosted by @sparticuz/chromium
-        : process.env.LOCAL_CHROMIUM_PATH, // Fallback for local dev (see step 4)
-      headless: true,
-      ignoreHTTPSErrors: true,
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
-    return browserInstance;
-  } catch (error) {
-    console.error('Error launching browser:', error);
-    throw new Error('Could not launch browser for PDF generation.');
   }
+  return browserInstance;
 };
 
 // ── Upload a base64 data-URI to Cloudinary ────────────────────────────────
@@ -207,7 +190,7 @@ exports.updateQuotation = async (req, res) => {
     if (termsImage?.startsWith('data:image')) {
       if (existing.termsImagePublicId)
         await deleteFromCloudinary(existing.termsImagePublicId).catch(() => {});
-      const uploaded = await uploadBase64ToCloudinary(termsImage, 'quotation_terms');
+      const uploaded = await uploadBase64ToCloudinary(termsImage, 'quotations/terms');
       if (uploaded) { termsImageUrl = uploaded.url; termsImagePublicId = uploaded.publicId; }
     } else if (termsImage === null) {
       if (existing.termsImagePublicId)
@@ -267,80 +250,38 @@ exports.deleteQuotation = async (req, res) => {
 // GENERATE PDF
 exports.generatePDF = async (req, res) => {
   const { html, filename = 'quotation' } = req.body;
-  if (!html) {
-    return res.status(400).json({ message: 'HTML content is required' });
-  }
+  if (!html) return res.status(400).json({ message: 'HTML content is required' });
 
-  let page = null;
-  let browser = null;
-  
+  let page;
   try {
     console.time('PDF Generation');
-    browser = await getBrowser();
+    const browser = await getBrowser();
     page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 15000 });
 
-    // Set content and wait for everything to load
-    await page.setContent(html, { 
-      waitUntil: ['load', 'networkidle0'], // Wait for both load and network idle
-      timeout: 30000 
-    });
-
-    // Generate PDF with specific options for better compatibility
     const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { 
-        top: '20mm', 
-        right: '20mm', 
-        bottom: '20mm', 
-        left: '20mm' 
-      },
-      preferCSSPageSize: true, // Use CSS page size if specified
-      displayHeaderFooter: false, // Set to true if you want headers/footers
+      format: 'A4', printBackground: true,
+      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
     });
+
+    await page.close(); page = null;
+
+    const header = Buffer.from(pdfBuffer).slice(0, 5).toString();
+    if (header !== '%PDF-') throw new Error('Generated file does not have a valid PDF header');
 
     console.timeEnd('PDF Generation');
     console.log(`PDF generated — ${pdfBuffer.length} bytes`);
 
-    // Validate PDF buffer
-    if (!pdfBuffer || pdfBuffer.length < 100) {
-      throw new Error('Generated PDF is too small or empty');
-    }
-
-    // Verify PDF header
-    const pdfHeader = pdfBuffer.slice(0, 5).toString();
-    if (pdfHeader !== '%PDF-') {
-      throw new Error('Generated file is not a valid PDF');
-    }
-
-    // Clear any existing headers
-    res.removeHeader('Content-Type');
-    res.removeHeader('Content-Disposition');
-    res.removeHeader('Content-Length');
-
-    // Set fresh headers
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
-
-    // Send the buffer
-    return res.send(pdfBuffer);
-
+    res.send(Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer));
   } catch (error) {
+    if (page) await page.close().catch(() => {});
     console.error('Error generating PDF:', error);
-    return res.status(500).json({ 
-      message: 'Error generating PDF', 
-      error: error.message 
-    });
-  } finally {
-    // Clean up resources
-    if (page) {
-      await page.close().catch(console.error);
-    }
-    // Don't close browser if you're reusing it
-    // Only close if you're not using browser instance caching
+    res.status(500).json({ message: 'Error generating PDF', error: error.message });
   }
 };
